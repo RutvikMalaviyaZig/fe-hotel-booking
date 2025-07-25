@@ -55,4 +55,4 @@ jobs:
             docker pull rutvikmalaviya0322/react-app
             docker stop react-container || true
             docker rm react-container || true
-            docker run -d -p 3000:80 --name react-container rutvikmalaviya0322/react-app
+            docker run -d -p 80:80 --name react-container rutvikmalaviya0322/react-app
