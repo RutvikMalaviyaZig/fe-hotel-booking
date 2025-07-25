@@ -1,83 +1,241 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { assets } from "../assets/assets.js";
 import StarRating from "./StarRating";
-import { facilityIcons } from "../assets/assets";
+import { facilityIcons, roomCommonData } from "../assets/assets";
 import { useAppContext } from "../context/AppContext";
-import { roomCommonData } from "../assets/assets";
+import { toast } from "react-hot-toast";
 
 const RoomDetails = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [room, setRoom] = useState(null);
   const [mainImage, setMainImage] = useState(null);
-  const { rooms, getToken, axios, navigate, toast } = useAppContext();
+  const { rooms, axios, getToken } = useAppContext();
   const [checkInDate, setCheckInDate] = useState("");
   const [checkOutDate, setCheckOutDate] = useState("");
   const [guests, setGuests] = useState(1);
   const [isAvailable, setIsAvailable] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const checkAvailability = async () => {
+    // Reset state
+    setIsAvailable(false);
+    
+    // Validate dates first
+    if (!checkInDate || !checkOutDate) {
+      toast.error("Please select both check-in and check-out dates");
+      return;
+    }
+    
+    if (new Date(checkInDate) >= new Date(checkOutDate)) {
+      toast.error("Check-in date must be before check-out date");
+      return;
+    }
+    
+    setIsLoading(true);
+    
     try {
-      if (checkInDate >= checkOutDate) {
-        toast.error("Check-in date must be less than check-out date");
-        return;
-      }
-      const { data } = await axios.post(
-        `/api/bookings/check-availability`,
+      // Make the API request
+      const response = await axios.post(
+        "/api/bookings/check-availability",
         {
           room: id,
           checkInDate,
           checkOutDate,
+        },
+        {
+          validateStatus: (status) => status < 500 // Don't throw for 4xx errors
         }
       );
-      if (data.success) {
-        if (data.isAvailable) {
-          setIsAvailable(true);
-          toast.success("Room is available");
-        } else {
-          setIsAvailable(false);
-          toast.error("Room is not available");
-        }
-      } else {
-        setIsAvailable(false);
-        toast.error("Room is not available");
+      
+      // Handle successful response (status 2xx)
+      if (response.status >= 200 && response.status < 300) {
+        const responseData = response.data || {};
+        const isRoomAvailable = Boolean(responseData.isAvailable);
+        
+        setIsAvailable(isRoomAvailable);
+        
+        // Show appropriate message
+        const message = isRoomAvailable 
+          ? "Room is available!" 
+          : responseData.message || "Room is not available for the selected dates";
+          
+        toast[isRoomAvailable ? "success" : "error"](message);
+        return isRoomAvailable;
       }
+      
+      // Handle API error responses (status 4xx)
+      const errorData = response.data || {};
+      const errorMessage = errorData.message || "Failed to check room availability";
+      toast.error(errorMessage);
+      return false;
+      
     } catch (error) {
-      toast.error(error.message);
+      // Handle network errors or other exceptions
+      let errorMessage = "An error occurred while checking availability";
+      
+      if (error) {
+        // Handle Axios errors
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          errorMessage = error.response.data?.message || 
+                        `Server responded with status ${error.response.status}`;
+        } else if (error.request) {
+          // The request was made but no response was received
+          errorMessage = "No response from server. Please check your connection.";
+        } else {
+          // Something happened in setting up the request
+          errorMessage = error.message || "Error setting up the request";
+        }
+      }
+      
+      toast.error(errorMessage);
+      return false;
+      
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const onSubmitHandler = async (e) => {
+    e.preventDefault();
+    
+    // Validate form data before submission
+    if (!checkInDate || !checkOutDate) {
+      toast.error('Please select both check-in and check-out dates');
+      return;
+    }
+    
+    if (new Date(checkInDate) >= new Date(checkOutDate)) {
+      toast.error('Check-out date must be after check-in date');
+      return;
+    }
+    
+    if (guests < 1) {
+      toast.error('Number of guests must be at least 1');
+      return;
+    }
+    
     try {
-      e.preventDefault();
+      // Check availability first if not already done
       if (!isAvailable) {
-        return checkAvailability();
-      } else {
-        const { data } = await axios.post(
-          `/api/bookings/book`,
-          {
-            room: id,
-            checkInDate,
-            checkOutDate,
-            guests,
-            paymentMethod: "Pay At Hotel",
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${await getToken()}`,
-            },
-          }
-        );
-        if (data.success) {
-          toast.success(data.message);
-          navigate(`/my-bookings`);
-          window.scrollTo(0, 0);
-        } else {
-          toast.error(data.message);
+        const isAvailable = await checkAvailability();
+        if (!isAvailable) {
+          toast.error('Room is not available for the selected dates');
+          return;
         }
       }
+      
+      // Only proceed with booking if room is available
+      const token = getToken();
+      if (!token) {
+        toast.error('Please log in to book a room');
+        navigate('/login', { state: { from: window.location.pathname } });
+        return;
+      }
+
+      // Prepare booking data
+      const bookingData = {
+        room: id,
+        checkInDate: new Date(checkInDate).toISOString().split('T')[0], // Ensure YYYY-MM-DD format
+        checkOutDate: new Date(checkOutDate).toISOString().split('T')[0],
+        guests: Number(guests) || 1,
+        paymentMethod: 'Pay At Hotel'
+      };
+
+      // Log the request payload for debugging
+      console.log('Sending booking request:', JSON.stringify(bookingData, null, 2));
+      
+      const response = await axios.post(
+        '/api/bookings/book',
+        bookingData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          validateStatus: (status) => status < 500 // Don't throw for 4xx errors
+        }
+      );
+      
+      // Handle successful response (2xx)
+      if (response.status >= 200 && response.status < 300) {
+        const responseData = response.data || {};
+        
+        if (responseData.success) {
+          toast.success(responseData.message || 'Booking successful!');
+          navigate('/my-bookings');
+          window.scrollTo(0, 0);
+        } else {
+          toast.error(responseData.message || 'Failed to book room');
+        }
+        return;
+      }
+      
+      // Handle error responses (4xx)
+      const errorData = response.data || {};
+      const errorMessage = errorData.message || 
+                         `Booking failed with status ${response.status}`;
+      
+      // Log full error for debugging
+      console.error('Booking API error:', {
+        status: response.status,
+        data: errorData,
+        headers: response.headers
+      });
+      
+      // Handle specific error cases
+      if (response.status === 400) {
+        if (errorData.errors) {
+          // Handle validation errors
+          const validationErrors = Object.values(errorData.errors)
+            .map(err => typeof err === 'string' ? err : err.message || 'Invalid field')
+            .join('\n');
+          toast.error(`Validation error: ${validationErrors}`);
+        } else if (errorData.message) {
+          toast.error(errorData.message);
+        } else {
+          toast.error('Invalid request. Please check your input and try again.');
+        }
+      } else if (response.status === 401) {
+        toast.error('Please log in to continue');
+        navigate('/login', { state: { from: window.location.pathname } });
+      } else {
+        toast.error(errorMessage);
+      }
+      
     } catch (error) {
-      toast.error(error.message);
+      console.error('Booking error:', error);
+      
+      let errorMessage = 'An error occurred while processing your booking';
+      
+      if (error) {
+        // Handle Axios errors
+        if (error.response) {
+          // Server responded with error status
+          const responseData = error.response.data || {};
+          errorMessage = responseData.message || 
+                        `Server responded with status ${error.response.status}`;
+          
+          // Handle 400 validation errors
+          if (error.response.status === 400 && responseData.errors) {
+            const validationErrors = Object.values(responseData.errors)
+              .map(err => typeof err === 'string' ? err : err.message || 'Invalid field')
+              .join('\n');
+            errorMessage = `Validation error: ${validationErrors}`;
+          }
+        } else if (error.request) {
+          // Request was made but no response received
+          errorMessage = 'No response from server. Please check your connection.';
+        } else if (error.message) {
+          // Other errors with message
+          errorMessage = error.message;
+        }
+      }
+      
+      toast.error(errorMessage);
     }
   };
 
@@ -90,8 +248,11 @@ const RoomDetails = () => {
   }, [rooms]);
 
   useEffect(() => {
-    checkAvailability();
-  }, [checkInDate, checkOutDate, guests]);
+    // Only check availability if we have both dates
+    if (checkInDate && checkOutDate) {
+      checkAvailability();
+    }
+  }, [checkInDate, checkOutDate, guests, id]);
 
   return (
     room && (
@@ -213,14 +374,16 @@ const RoomDetails = () => {
               </label>
               <input
                 value={guests}
-                onChange={(e) => setGuests(e.target.value)}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value, 10);
+                  setGuests(isNaN(value) ? 1 : Math.max(1, value));
+                }}
                 type="number"
                 id="guests"
                 placeholder="1"
                 required
                 className="w-full rounded border border-gray-300 px-3 py-2 mt-1.5 outline-none"
                 min={1}
-                max={10}
               />
             </div>
           </div>

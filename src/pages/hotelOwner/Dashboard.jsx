@@ -9,29 +9,50 @@ const Dashboard = () => {
     totalBookings: 0,
     totalRevenue: 0,
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchDashboardData = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
       const { data } = await axios.get(
         `/api/bookings/hotel`,
         {
           headers: {
-            Authorization: `Bearer ${await getToken()}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
-      console.log(data);
-      if (data.success) {
+
+      if (data && data.success) {
         setDashboardData({
-          bookings: data.bookings || [],
-          totalBookings: data.totalBookings || 0,
-          totalRevenue: data.totalRevenue || 0,
+          bookings: Array.isArray(data.bookings) ? data.bookings : [],
+          totalBookings: Number(data?.totalBookings) || 0,
+          totalRevenue: Number(data?.totalRevenue) || 0,
         });
       } else {
-        toast.error(data.message);
+        const errorMessage = data?.message || 'Failed to fetch dashboard data';
+        setError(errorMessage);
+        toast.error(errorMessage);
       }
     } catch (error) {
-      toast.error(error.message);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch dashboard data';
+      setError(errorMessage);
+      toast.error(errorMessage);
+
+      // If unauthorized, clear the token and redirect to login
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -40,6 +61,29 @@ const Dashboard = () => {
       fetchDashboardData();
     }
   }, [user]);
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-10">
+        <h2 className="text-xl font-semibold text-red-600 mb-2">Error Loading Dashboard</h2>
+        <p className="text-gray-600 mb-4">{error}</p>
+        <button
+          onClick={fetchDashboardData}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <Title

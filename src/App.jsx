@@ -1,6 +1,6 @@
 import React from "react";
 import Navbar from "./components/Navbar";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Route, Routes, useLocation, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import Footer from "./components/Footer";
 import AllRooms from "./pages/AllRooms";
@@ -14,10 +14,13 @@ import AddRoom from "./pages/hotelOwner/AddRoom";
 import { Toaster } from "react-hot-toast";
 import { useAppContext } from "./context/AppContext";
 import Loader from "./components/Loader";
+import Login from "./components/auth/Login";
+import Signup from "./components/auth/Signup";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 const App = () => {
   const isOwnerPath = useLocation().pathname.includes("owner");
-  const { showHotelReg } = useAppContext();
+  const { showHotelReg, user } = useAppContext();
 
   return (
     <div>
@@ -29,9 +32,23 @@ const App = () => {
           <Route path="/" element={<Home />} />
           <Route path="/rooms" element={<AllRooms />} />
           <Route path="/rooms/:id" element={<RoomDetails />} />
-          <Route path="/my-bookings" element={<MyBookings />} />
+          <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
+          
+          {/* Protected Routes */}
+          <Route path="/my-bookings" element={
+            <ProtectedRoute>
+              <MyBookings />
+            </ProtectedRoute>
+          } />
+          
           <Route path="/loader/:nextUrl" element={<Loader />} />
-          <Route path="/owner" element={<Layout />}>
+          
+          <Route path="/owner" element={
+            <ProtectedRoute requiredRole="hotelOwner">
+              <Layout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Dashboard />} />
             <Route path="list-room" element={<ListRoom />} />
             <Route path="add-room" element={<AddRoom />} />

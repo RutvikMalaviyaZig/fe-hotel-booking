@@ -4,49 +4,36 @@ import { assets } from "../assets/assets";
 import { useAppContext } from "../context/AppContext";
 
 const MyBookings = () => {
-  const { getToken, axios, user, toast, navigate } = useAppContext();
+  const { axios, toast, user } = useAppContext();
   const [bookings, setBookings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const fetchUserBookings = async () => {
     try {
-      const { data } = await axios.get(
-        '/api/bookings/user',
-        {
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
-          },
-        }
-      );
+      setIsLoading(true);
+      const { data } = await axios.get('/api/bookings/user');
       if (data.success) {
-        setBookings(data.bookings);
+        setBookings(data.bookings || []);
       } else {
-        toast.error(data.message);
+        toast.error(data.message || 'Failed to load bookings');
       }
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || 'Error fetching bookings');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handlePayment = async (bookingId) => {
     try {
-      const { data } = await axios.post(
-        '/api/bookings/stripe-payment',
-        {
-          bookingId,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${await getToken()}`,
-          },
-        }
-      );
-      if (data.success) {
+      const { data } = await axios.post('/api/bookings/stripe-payment', { bookingId });
+      if (data.success && data.url) {
         window.location.href = data.url;
       } else {
-        toast.error(data.message);
+        toast.error(data.message || 'Payment initialization failed');
       }
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || 'Payment processing error');
     }
   };
 
