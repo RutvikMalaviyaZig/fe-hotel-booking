@@ -18,6 +18,10 @@ jobs:
           node-version: '18'
 
       - name: Build React App
+        env:
+          VITE_CURRENCY: ${{ secrets.VITE_CURRENCY }}
+          VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: |
           npm install
           npm run build
