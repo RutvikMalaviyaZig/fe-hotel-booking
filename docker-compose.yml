@@ -4,4 +4,4 @@ services:
   app:
     build: .
     ports:
-      - "3000:5173"
+      - "80:5173"
