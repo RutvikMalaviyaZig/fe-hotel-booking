@@ -1,8 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
+import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import { assets } from "../assets/assets.js";
 import { cities } from "../assets/assets.js";
 import { useAppContext } from "../context/AppContext";
 import toast from "react-hot-toast";
+
+const containerStyle = {
+  width: '100%',
+  height: '300px',
+  borderRadius: '8px',
+  marginTop: '8px'
+};
+
+const center = {
+  lat: 20.5937,  // Default center on India
+  lng: 78.9629
+};
 
 const HotelReg = () => {
   const { setShowHotelReg, axios, getToken, setIsOwner } = useAppContext();
@@ -10,9 +23,41 @@ const HotelReg = () => {
   const [contact, setContact] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
+  const [coordinates, setCoordinates] = useState({
+    lat: null,
+    lng: null
+  });
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY'
+  });
+
+  const [map, setMap] = useState(null);
+
+  const onMapClick = useCallback((event) => {
+    setCoordinates({
+      lat: event.latLng.lat(),
+      lng: event.latLng.lng()
+    });
+  }, []);
+
+  const onLoad = useCallback((map) => {
+    setMap(map);
+  }, []);
+
+  const onUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
 
   const onSubmitHandler = async (e) => {
     e.preventDefault();
+
+    if (!coordinates.lat || !coordinates.lng) {
+      toast.error('Please select a location on the map');
+      return;
+    }
+
     try {
       const token = getToken(); // Get the token synchronously
       if (!token) {
@@ -27,6 +72,8 @@ const HotelReg = () => {
           contact,
           address,
           city,
+          latitude: coordinates.lat,
+          longitude: coordinates.lng
         },
         {
           headers: {
@@ -35,18 +82,11 @@ const HotelReg = () => {
           }
         }
       );
-      
+
       if (data?.success) {
         toast.success('Hotel registered successfully!');
         setShowHotelReg(false);
         setIsOwner(true);
-      }
-      if (data.success) {
-        toast.success(data.message);
-        setIsOwner(true);
-        setShowHotelReg(false);
-      } else {
-        toast.error(data.message);
       }
     } catch (error) {
       toast.error(error.message);
@@ -144,7 +184,43 @@ const HotelReg = () => {
               ))}
             </select>
           </div>
-          <button className="bg-indigo-500 text-white px-6 py-2 rounded hover:bg-indigo-600 transition-all duration-500 cursor-pointer mt-6 mr-auto">
+          {/* Map Component */}
+          <div className="w-full mt-4">
+            <label className="text-gray-500 font-medium">
+              Select Location on Map
+            </label>
+            {isLoaded ? (
+              <div className="mt-1 border border-gray-200 rounded overflow-hidden">
+                <GoogleMap
+                  mapContainerStyle={containerStyle}
+                  center={coordinates.lat && coordinates.lng ? coordinates : center}
+                  zoom={6}
+                  onClick={onMapClick}
+                  onLoad={onLoad}
+                  onUnmount={onUnmount}
+                >
+                  {coordinates.lat && coordinates.lng && (
+                    <Marker position={coordinates} />
+                  )}
+                </GoogleMap>
+              </div>
+            ) : (
+              <div className="h-[300px] bg-gray-100 rounded flex items-center justify-center mt-1">
+                Loading map...
+              </div>
+            )}
+            {(coordinates.lat && coordinates.lng) && (
+              <div className="mt-2 text-sm text-gray-600">
+                Selected Location: {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            className="bg-indigo-500 text-white px-6 py-2 rounded hover:bg-indigo-600 transition-all duration-500 cursor-pointer mt-6 mr-auto"
+            disabled={!coordinates.lat || !coordinates.lng}
+          >
             Register
           </button>
         </div>
